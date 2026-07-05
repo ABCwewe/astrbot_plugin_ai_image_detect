@@ -13,7 +13,7 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api.event.filter import command, llm_tool
 from astrbot.api import logger
-from astrbot.core.message.components import Image
+from astrbot.core.message.components import Image, Reply
 
 
 SE_API = "https://api.sightengine.com/1.0/check.json"
@@ -46,14 +46,23 @@ class AIImageDetectPlugin(Star):
             await self._client.aclose()
 
     def _extract_image_url(self, event: AstrMessageEvent) -> str | None:
-        # ponytail: 扫一遍消息链, 找到第一个 Image 组件
+        # ponytail: aiocqhttp 上 Image.file 是 file://, Image.url 才是 https CDN
+        # Reply 组件包着原消息的 chain, 引用模式要从那里找
+        def _first_url(comps):
+            for c in comps or []:
+                if isinstance(c, Image):
+                    url = c.url or c.file or ""
+                    if url.startswith(("http://", "https://")):
+                        return url
+            return None
+        url = _first_url(event.get_messages())
+        if url:
+            return url
         for comp in event.get_messages():
-            if isinstance(comp, Image):
-                url = comp.file or ""
-                if url.startswith("http://") or url.startswith("https://"):
+            if isinstance(comp, Reply) and comp.chain:
+                url = _first_url(comp.chain)
+                if url:
                     return url
-                # file:// / 本地路径跳过
-                return None
         return None
 
     def _check_cooldown(self, origin: str) -> tuple[bool, int]:
