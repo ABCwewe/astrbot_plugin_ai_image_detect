@@ -5,9 +5,11 @@ Ponytail notes:
 - 不缓存: 同一图几乎不会重复,缓存省 ops 但占内存,YAGNI
 - per-generator 分数先不做: Sightengine 基础 API 不返回, 高级要联系销售
 """
+import os
 import time
 from typing import Optional, AsyncGenerator
 
+import aiofiles
 import httpx
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
@@ -45,24 +47,22 @@ class AIImageDetectPlugin(Star):
         if self._client:
             await self._client.aclose()
 
-    def _extract_image_url(self, event: AstrMessageEvent) -> str | None:
-        # ponytail: aiocqhttp 上 Image.file 是 file://, Image.url 才是 https CDN
-        # Reply 组件包着原消息的 chain, 引用模式要从那里找
-        def _first_url(comps):
+    def _extract_image_path(self, event: AstrMessageEvent) -> str | None:
+        # ponytail: AstrBot 把图下载到 data/temp/, Image.file/url/path 全是本地路径
+        # 返回 path 字段(本地绝对路径)或 file 字段,供 _call_sightengine 上传
+        def _scan(comps):
             for c in comps or []:
                 if isinstance(c, Image):
-                    url = c.url or c.file or ""
-                    if url.startswith(("http://", "https://")):
-                        return url
+                    return c.path or c.file or ""
             return None
-        url = _first_url(event.get_messages())
-        if url:
-            return url
+        src = _scan(event.get_messages())
+        if src and os.path.isfile(src):
+            return src
         for comp in event.get_messages():
-            if isinstance(comp, Reply) and comp.chain:
-                url = _first_url(comp.chain)
-                if url:
-                    return url
+            if isinstance(comp, Reply) and getattr(comp, "chain", None):
+                src = _scan(comp.chain)
+                if src and os.path.isfile(src):
+                    return src
         return None
 
     def _check_cooldown(self, origin: str) -> tuple[bool, int]:
@@ -76,34 +76,30 @@ class AIImageDetectPlugin(Star):
     def _update_cooldown(self, origin: str):
         self._last_call[origin] = time.time()
 
-    async def _call_sightengine(self, image_url: str) -> dict:
+    async def _call_sightengine(self, image_src: str) -> dict:
+        # ponytail: 本地文件走 multipart 上传, 远程 URL 走 GET
         if not self.api_user or not self.api_secret:
             return {"ok": False, "error": "未配置 API user/secret,在插件配置里填"}
-        params = {
-            "models": "genai",
-            "api_user": self.api_user,
-            "api_secret": self.api_secret,
-            "url": image_url,
-        }
+        data = {"models": "genai", "api_user": self.api_user, "api_secret": self.api_secret}
         try:
-            r = await self._client.get(SE_API, params=params)
+            if image_src.startswith(("http://", "https://")):
+                r = await self._client.get(SE_API, params={**data, "url": image_src})
+            else:
+                import aiofiles
+                async with aiofiles.open(image_src, "rb") as f:
+                    content = await f.read()
+                r = await self._client.post(SE_API, data=data, files={"media": (os.path.basename(image_src), content)})
             if r.status_code != 200:
                 return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
-            data = r.json()
-            if data.get("status") != "success":
-                return {"ok": False, "error": f"API failure: {data}"}
-            score = data.get("type", {}).get("ai_generated")
+            resp = r.json()
+            if resp.get("status") != "success":
+                return {"ok": False, "error": f"API failure: {resp}"}
+            score = resp.get("type", {}).get("ai_generated")
             if score is None:
-                return {"ok": False, "error": f"返回里没有 ai_generated: {data}"}
-            ops = data.get("request", {}).get("operations", "?")
-            return {
-                "ok": True,
-                "score": float(score),
-                "operations": ops,
-                "raw": data,
-            }
-        except httpx.HTTPError as e:
-            return {"ok": False, "error": f"网络错误: {e}"}
+                return {"ok": False, "error": f"返回里没有 ai_generated: {resp}"}
+            return {"ok": True, "score": float(score), "operations": resp.get("request", {}).get("operations", "?")}
+        except (httpx.HTTPError, OSError) as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
     def _format_verdict(self, result: dict) -> str:
         if not result["ok"]:
@@ -123,13 +119,13 @@ class AIImageDetectPlugin(Star):
             yield event.plain_result(f"冷却中,还剩 {remain} 秒")
             return
 
-        url = self._extract_image_url(event)
-        if not url:
-            yield event.plain_result("没找到图片 URL,发图片或引用含图片的消息")
+        src = self._extract_image_path(event)
+        if not src:
+            yield event.plain_result("没找到图片,发图片或引用含图片的消息")
             return
 
         self._update_cooldown(origin)
-        result = await self._call_sightengine(url)
+        result = await self._call_sightengine(src)
         yield event.plain_result(self._format_verdict(result))
 
     @llm_tool(name="ai_image_check")
@@ -145,7 +141,7 @@ class AIImageDetectPlugin(Star):
             return f"冷却中,还剩 {remain} 秒"
 
         if not image_url:
-            image_url = self._extract_image_url(event) or ""
+            image_url = self._extract_image_path(event) or ""
         if not image_url:
             return "没找到图片 URL,需要发图片或提供 image_url"
 
