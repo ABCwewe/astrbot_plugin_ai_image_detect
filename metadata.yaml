@@ -1,0 +1,6 @@
+name: astrbot_plugin_ai_image_detect
+display_name: AI 图像检测
+desc: 基于 Sightengine 的 AI 生成图像检测插件,支持 /鉴图 命令与 LLM 工具调用。
+version: v0.1.0
+author: publieople
+repo: https://github.com/publieople/astrbot_plugin_ai_image_detect

@@ -1,0 +1,26 @@
+{
+  "api_user": {
+    "type": "string",
+    "description": "Sightengine API user",
+    "hint": "在 https://dashboard.sightengine.com/ 注册后获取",
+    "default": ""
+  },
+  "api_secret": {
+    "type": "string",
+    "description": "Sightengine API secret",
+    "hint": "在 https://dashboard.sightengine.com/ 注册后获取",
+    "default": ""
+  },
+  "ai_threshold": {
+    "type": "float",
+    "description": "AI 判定阈值(0-1)",
+    "hint": "ai_generated 分数 >= 此值判为 AI 生成,默认 0.5",
+    "default": 0.5
+  },
+  "cooldown_seconds": {
+    "type": "int",
+    "description": "每个会话的检测冷却时间(秒)",
+    "hint": "防止刷请求烧光 Sightengine 免费配额,默认 30",
+    "default": 30
+  }
+}
