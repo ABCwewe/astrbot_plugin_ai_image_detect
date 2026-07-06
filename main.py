@@ -85,7 +85,6 @@ class AIImageDetectPlugin(Star):
             if image_src.startswith(("http://", "https://")):
                 r = await self._client.get(SE_API, params={**data, "url": image_src})
             else:
-                import aiofiles
                 async with aiofiles.open(image_src, "rb") as f:
                     content = await f.read()
                 r = await self._client.post(SE_API, data=data, files={"media": (os.path.basename(image_src), content)})
