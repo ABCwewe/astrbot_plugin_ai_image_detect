@@ -250,7 +250,7 @@ class AIImageDetectPlugin(Star):
             except (ValueError, TypeError):
                 total_ops += 5
 
-        verdict = "AI 生成" if avg_score >= self.threshold else "人类制作"
+        verdict = "AI 生成的图片" if avg_score >= self.threshold else "人类制作的图片"
         avg_pct = f"{avg_score * 100:.1f}%"
         frame_details = ", ".join(f"{desc} {res['score'] * 100:.1f}%" for desc, res in succeeded)
 
@@ -295,14 +295,14 @@ class AIImageDetectPlugin(Star):
         if not result["ok"]:
             return f"检测失败:{result['error']}"
         score = result["score"]
-        verdict = "AI 生成" if score >= self.threshold else "人类制作"
+        verdict = "AI 生成的图片" if score >= self.threshold else "人类制作的图片"
         pct = f"{score * 100:.1f}%"
         ops = result["operations"]
         return f"{verdict}(AI 概率 {pct},阈值 {self.threshold},消耗 {ops} ops)"
 
     @command("鉴图")
     async def cmd_detect(self, event: AstrMessageEvent) -> AsyncGenerator[MessageEventResult, None]:
-        """鉴图 - 检测引用/最新消息中的图片是否为 AI 生成。"""
+        """鉴图 - 检测引用/最新消息中的图片是否为 AI 生成的图片。"""
         # 支持通过指令快捷切换动图屏蔽与抽帧开关
         msg_str = event.get_message_str().strip()
         parts = msg_str.split()
@@ -375,7 +375,7 @@ class AIImageDetectPlugin(Star):
 
     @llm_tool(name="ai_image_check")
     async def llm_check(self, event: AstrMessageEvent, image_url: str = ""):
-        """检测一张图片是否为 AI 生成。
+        """检测一张图片是否为 AI 生成的图片。
 
         Args:
             image_url(string): 要检测的图片 URL,留空则检测当前消息中的图片
@@ -406,5 +406,5 @@ class AIImageDetectPlugin(Star):
         if not result["ok"]:
             return f"检测失败:{result['error']}"
         score = result["score"]
-        verdict = "AI 生成" if score >= self.threshold else "人类制作"
+        verdict = "AI 生成的图片" if score >= self.threshold else "人类制作的图片"
         return f"{verdict}(AI 概率 {score * 100:.1f}%,阈值 {self.threshold})"
